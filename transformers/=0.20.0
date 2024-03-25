@@ -1,0 +1,51 @@
+Collecting bitsandbytes
+  Downloading bitsandbytes-0.42.0-py3-none-any.whl.metadata (9.9 kB)
+Collecting accelerate
+  Downloading accelerate-0.27.2-py3-none-any.whl.metadata (18 kB)
+Collecting scipy (from bitsandbytes)
+  Downloading scipy-1.12.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (60 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 60.4/60.4 kB 1.6 MB/s eta 0:00:00
+Requirement already satisfied: numpy>=1.17 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (1.26.4)
+Requirement already satisfied: packaging>=20.0 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (23.2)
+Collecting psutil (from accelerate)
+  Downloading psutil-5.9.8-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (21 kB)
+Requirement already satisfied: pyyaml in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (6.0.1)
+Requirement already satisfied: torch>=1.10.0 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (2.2.0+cu118)
+Requirement already satisfied: huggingface-hub in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (0.20.3)
+Requirement already satisfied: safetensors>=0.3.1 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from accelerate) (0.4.2)
+Requirement already satisfied: filelock in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (3.13.1)
+Requirement already satisfied: typing-extensions>=4.8.0 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (4.9.0)
+Requirement already satisfied: sympy in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (1.12)
+Requirement already satisfied: networkx in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (3.2.1)
+Requirement already satisfied: jinja2 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (3.1.2)
+Requirement already satisfied: fsspec in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (2024.2.0)
+Requirement already satisfied: nvidia-cuda-nvrtc-cu11==11.8.89 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.8.89)
+Requirement already satisfied: nvidia-cuda-runtime-cu11==11.8.89 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.8.89)
+Requirement already satisfied: nvidia-cuda-cupti-cu11==11.8.87 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.8.87)
+Requirement already satisfied: nvidia-cudnn-cu11==8.7.0.84 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (8.7.0.84)
+Requirement already satisfied: nvidia-cublas-cu11==11.11.3.6 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.11.3.6)
+Requirement already satisfied: nvidia-cufft-cu11==10.9.0.58 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (10.9.0.58)
+Requirement already satisfied: nvidia-curand-cu11==10.3.0.86 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (10.3.0.86)
+Requirement already satisfied: nvidia-cusolver-cu11==11.4.1.48 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.4.1.48)
+Requirement already satisfied: nvidia-cusparse-cu11==11.7.5.86 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.7.5.86)
+Requirement already satisfied: nvidia-nccl-cu11==2.19.3 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (2.19.3)
+Requirement already satisfied: nvidia-nvtx-cu11==11.8.86 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (11.8.86)
+Requirement already satisfied: triton==2.2.0 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from torch>=1.10.0->accelerate) (2.2.0)
+Requirement already satisfied: requests in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from huggingface-hub->accelerate) (2.31.0)
+Requirement already satisfied: tqdm>=4.42.1 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from huggingface-hub->accelerate) (4.66.2)
+Requirement already satisfied: MarkupSafe>=2.0 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from jinja2->torch>=1.10.0->accelerate) (2.1.3)
+Requirement already satisfied: charset-normalizer<4,>=2 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from requests->huggingface-hub->accelerate) (3.3.2)
+Requirement already satisfied: idna<4,>=2.5 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from requests->huggingface-hub->accelerate) (3.6)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from requests->huggingface-hub->accelerate) (2.2.0)
+Requirement already satisfied: certifi>=2017.4.17 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from requests->huggingface-hub->accelerate) (2024.2.2)
+Requirement already satisfied: mpmath>=0.19 in /dataheart/jiayi3/anaconda3/envs/hg_llama/lib/python3.11/site-packages (from sympy->torch>=1.10.0->accelerate) (1.3.0)
+Downloading bitsandbytes-0.42.0-py3-none-any.whl (105.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 105.0/105.0 MB 8.5 MB/s eta 0:00:00
+Downloading accelerate-0.27.2-py3-none-any.whl (279 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 280.0/280.0 kB 6.1 MB/s eta 0:00:00
+Downloading psutil-5.9.8-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (288 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 288.2/288.2 kB 9.0 MB/s eta 0:00:00
+Downloading scipy-1.12.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (38.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 38.4/38.4 MB 18.8 MB/s eta 0:00:00
+Installing collected packages: scipy, psutil, bitsandbytes, accelerate
+Successfully installed accelerate-0.27.2 bitsandbytes-0.42.0 psutil-5.9.8 scipy-1.12.0
