@@ -111,13 +111,13 @@ def add_kv_layer(data, text, layer):
     # print("adding hash is: ", text_hashed)
     add_kv(text_hashed, data)
 
-def fetch_kv_layer(text, layer, mask, indices_list):
+def fetch_kv_layer(text, layer, mask):
     text_hashed = hash_string(text + str(layer))
     print("fetching hash is ", text_hashed)
     time, tier = get_predicted_loading_time(text_hashed)
     
     #[ADD] decide whether to fetch
     if (True):
-        return fetch_kv(text_hashed, tier)[:,:,indices_list,:]
+        return fetch_kv(text_hashed, tier)[:,:,mask,:]
     
     return -1
