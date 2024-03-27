@@ -1370,6 +1370,7 @@ class LlamaModel(LlamaPreTrainedModel):
         check_layer_idx = 0
         top_k_ratio = None
         for layer_idx, decoder_layer in enumerate(self.layers):
+            # loaded_key = fetch(text, x) #cuda, []
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
