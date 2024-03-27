@@ -1,6 +1,6 @@
 import torch
 
-rootdir = "/dataheart/hanchen/rag_pipeline"
+rootdir = "/home/fsuser/hanchen/transformers_fuse/kv_cache"
 tiers = ['gpu', 'cpu', 'nfs']
 cpu_hash = {}
 gpu_hash = {} #key, [size (GB), content]
@@ -108,7 +108,7 @@ def add_kv(text_hash, kv):
 
 def add_kv_layer(data, text, layer):
     text_hashed = hash_string(text + str(layer))
-    print("adding hash is: ", text_hashed)
+    # print("adding hash is: ", text_hashed)
     add_kv(text_hashed, data)
 
 def fetch_kv_layer(text, layer, mask, indices_list):
