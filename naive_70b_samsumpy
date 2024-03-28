@@ -265,25 +265,28 @@ def evaluate_dataset(
                         if i == 0:
                             #warmup
                             output_dict = model(torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device))
-                            
                             start = torch.cuda.Event(enable_timing=True)
                             end = torch.cuda.Event(enable_timing=True)
                             start.record()
+                            
+                            #Fake loading
+                            for j in range(num_layer):
+                                temp_k = fetch_kv_layer(chunk_past_key_values[j][0], "key", j)
+                                temp_v = fetch_kv_layer(chunk_past_key_values[j][1], "value", j)
                             output_dict = model(input_tensor, 
                                             past_key_values=chunk_past_key_values,
                                             check=True,
                                             imp_indices=imp_indices, 
                                             top_k_ratios = first_doc_k_ratios,
                                             check_layers=check_layers,
-                                            last_len = test_last_len,
-                                            activate_pipe=True)
+                                            last_len = test_last_len)
                             end.record()
                         else:
                             output_dict = model(input_tensor, past_key_values=past_key_values)
                         if i==0:
                             torch.cuda.synchronize()
                             temp_time = start.elapsed_time(end)
-                            print(f"check temp time: {temp_time}; input_len: {input_len}")
+                            print(f"org temp time: {temp_time}; input_len: {input_len}")
                             total_time+=temp_time
                         tok = torch.argmax(output_dict['logits'][:,-1,:])
                         past_key_values = output_dict['past_key_values']

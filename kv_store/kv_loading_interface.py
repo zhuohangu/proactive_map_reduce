@@ -1,6 +1,7 @@
 import torch
 
-rootdir = "/home/fsuser/hanchen/transformers_fuse/kv_cache"
+#rootdir = "/home/fsuser/hanchen/transformers_fuse/kv_cache"
+rootdir = "/dataheart/jiayi3/transformers_fuse/kv_cache"
 tiers = ['gpu', 'cpu', 'nfs']
 cpu_hash = {}
 gpu_hash = {} #key, [size (GB), content]
@@ -111,13 +112,20 @@ def add_kv_layer(data, text, layer):
     # print("adding hash is: ", text_hashed)
     add_kv(text_hashed, data)
 
-def fetch_kv_layer(text, layer, mask):
+def fetch_kv_layer(text, layer, mask=None):
     text_hashed = hash_string(text + str(layer))
     print("fetching hash is ", text_hashed)
     time, tier = get_predicted_loading_time(text_hashed)
     
     #[ADD] decide whether to fetch
     if (True):
-        return fetch_kv(text_hashed, tier)[:,:,mask,:]
+        if mask:
+            # FIXME(Jiayi): This is still not efficient enough
+            # We are still loading everything
+            # Better indexing on the disk?
+            kv = fetch_kv(text_hashed, tier)[:,:,mask,:]
+        else:
+            kv = fetch_kv(text_hashed, tier)
+        return kv
     
     return -1

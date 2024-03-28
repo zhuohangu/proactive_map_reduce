@@ -21,6 +21,7 @@
 import math
 import warnings
 from typing import List, Optional, Tuple, Union
+from .....kv_store import fetch_kv_layer
 
 import torch
 import torch.nn.functional as F
@@ -1300,7 +1301,8 @@ class LlamaModel(LlamaPreTrainedModel):
         imp_indices = None,
         check_layers = None,
         top_k_ratios = None,
-        last_len=None
+        last_len=None,
+        activate_pipe=None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1388,6 +1390,15 @@ class LlamaModel(LlamaPreTrainedModel):
                     
             else:
                 status = 3
+            
+            load_cache_stream = torch.cuda.Stream()
+            
+            if check and layer_idx < 79: #FIXME(Jiayi): make it dynamic to fit diifferent model size
+                with torch.cuda.stream(load_cache_stream):
+                #FIXME(Jiayi): type conversion is redundant, can we optimize?
+                    temp_past_key_values = [list(kv) for kv in past_key_values]
+                    layer_idx_fetch = layer_idx+1
+                    temp_past_key_values[layer_idx_fetch][0] = fetch_kv_layer("k",layer_idx_fetch,imp_indices)
                 
             layer_outputs, imp_indices = decoder_layer(
                 hidden_states,
@@ -1415,7 +1426,10 @@ class LlamaModel(LlamaPreTrainedModel):
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
-
+            
+            if check and layer_idx < 79:
+                torch.cuda.current_stream.wait_stream(load_cache_stream)
+                
         hidden_states = self.norm(hidden_states)
 
         # add hidden states from the last decoder layer
@@ -1529,7 +1543,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         imp_indices = None,
         check_layers = None,
         top_k_ratios = None,
-        last_len=None
+        last_len=None,
+        activate_pipe=False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1579,7 +1594,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             imp_indices = imp_indices,
             check_layers = check_layers,
             top_k_ratios = top_k_ratios,
-            last_len=last_len
+            last_len=last_len,
+            activate_pipe=activate_pipe,
         )
 
         hidden_states = outputs[0]
