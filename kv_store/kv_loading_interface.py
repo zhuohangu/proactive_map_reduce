@@ -87,9 +87,10 @@ def decide_tier_to_add(kv):
     #determining the logic
     return "nfs"
 
-def add_kv(text_hash, kv):
+def add_kv(text_hash, kv, tier=None):
     global cpu_available, disk_available
-    tier = decide_tier_to_add(kv)
+    if tier is None:
+        tier = decide_tier_to_add(kv)
     memory_occupied_bytes = sum(tensor.element_size() * tensor.nelement() for tensor in kv)
     memory_occupied_GB = memory_occupied_bytes / (1024 ** 3)
     if(tier == 'gpu'):
@@ -112,11 +113,14 @@ def add_kv_layer(data, text, layer):
     # print("adding hash is: ", text_hashed)
     add_kv(text_hashed, data)
 
-def fetch_kv_layer(text, layer, mask=None):
+def fetch_kv_layer(text, layer, mask=None, tier=None):
     text_hashed = hash_string(text + str(layer))
     print("fetching hash is ", text_hashed)
-    time, tier = get_predicted_loading_time(text_hashed)
-    
+    #time, tier = get_predicted_loading_time(text_hashed)
+    if tier is None or tier==-1:
+        tier = 'nfs'
+    #import pdb
+    #pdb.set_trace()
     #[ADD] decide whether to fetch
     if (True):
         if mask:

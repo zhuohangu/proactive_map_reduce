@@ -21,7 +21,6 @@
 import math
 import warnings
 from typing import List, Optional, Tuple, Union
-from .....kv_store import fetch_kv_layer
 
 import torch
 import torch.nn.functional as F
@@ -1302,7 +1301,8 @@ class LlamaModel(LlamaPreTrainedModel):
         check_layers = None,
         top_k_ratios = None,
         last_len=None,
-        activate_pipe=None
+        activate_pipe=None,
+        fetch_kv_layer=None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1371,6 +1371,12 @@ class LlamaModel(LlamaPreTrainedModel):
 
         check_layer_idx = 0
         top_k_ratio = None
+        
+        #FIXME(Jiayi): only support `bsz=1`` here
+        if check and activate_pipe:
+            #pdb.set_trace()
+            kv_shape_org = past_key_values[0][0].shape
+            kv_dtype = past_key_values[0][0].dtype
         for layer_idx, decoder_layer in enumerate(self.layers):
             # loaded_key = fetch(text, x) #cuda, []
             if output_hidden_states:
@@ -1393,13 +1399,17 @@ class LlamaModel(LlamaPreTrainedModel):
             
             load_cache_stream = torch.cuda.Stream()
             
-            if check and layer_idx < 79: #FIXME(Jiayi): make it dynamic to fit diifferent model size
+            if activate_pipe and check and layer_idx < 79: #FIXME(Jiayi): make it dynamic to fit diifferent model size
                 with torch.cuda.stream(load_cache_stream):
-                #FIXME(Jiayi): type conversion is redundant, can we optimize?
+                #FIXME(Jiayi): type conversions are redundant, can we optimize?
                     temp_past_key_values = [list(kv) for kv in past_key_values]
                     layer_idx_fetch = layer_idx+1
-                    temp_past_key_values[layer_idx_fetch][0] = fetch_kv_layer("k",layer_idx_fetch,imp_indices)
-                
+                    temp_past_key_values[layer_idx_fetch][0] = torch.empty(kv_shape_org, dtype=kv_dtype)
+                    temp_past_key_values[layer_idx_fetch][1] = torch.empty(kv_shape_org, dtype=kv_dtype)
+                    temp_past_key_values[layer_idx_fetch][0][:,:,imp_indices] = fetch_kv_layer("key",layer_idx_fetch,imp_indices)
+                    temp_past_key_values[layer_idx_fetch][1][:,:,imp_indices] = fetch_kv_layer("value",layer_idx_fetch,imp_indices)
+                    past_key_values = tuple([tuple(x) for x in temp_past_key_values])
+                    past_key_values = DynamicCache.from_legacy_cache(past_key_values)
             layer_outputs, imp_indices = decoder_layer(
                 hidden_states,
                 attention_mask=causal_mask,
@@ -1427,8 +1437,8 @@ class LlamaModel(LlamaPreTrainedModel):
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
             
-            if check and layer_idx < 79:
-                torch.cuda.current_stream.wait_stream(load_cache_stream)
+            if activate_pipe and check and layer_idx < 79:
+                torch.cuda.current_stream().wait_stream(load_cache_stream)
                 
         hidden_states = self.norm(hidden_states)
 
@@ -1545,6 +1555,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         top_k_ratios = None,
         last_len=None,
         activate_pipe=False,
+        fetch_kv_layer=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1596,6 +1607,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             top_k_ratios = top_k_ratios,
             last_len=last_len,
             activate_pipe=activate_pipe,
+            fetch_kv_layer=fetch_kv_layer,
         )
 
         hidden_states = outputs[0]

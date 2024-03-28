@@ -16,7 +16,7 @@ import collections
 from itertools import chain
 import inspect
 from rouge_score import rouge_scorer
-from kv_store import add_kv_layer, fetch_kv_layer
+from kv_store import add_kv_layer, fetch_kv_layer, fetch_kv
 
 
 B_INST, E_INST = "[INST]", "[/INST]"
@@ -269,6 +269,7 @@ def evaluate_dataset(
                             start = torch.cuda.Event(enable_timing=True)
                             end = torch.cuda.Event(enable_timing=True)
                             start.record()
+                            #FIXME(Jiayi): Don't use this many params, use a metadat_cls
                             output_dict = model(input_tensor, 
                                             past_key_values=chunk_past_key_values,
                                             check=True,
@@ -276,7 +277,9 @@ def evaluate_dataset(
                                             top_k_ratios = first_doc_k_ratios,
                                             check_layers=check_layers,
                                             last_len = test_last_len,
-                                            activate_pipe=True)
+                                            activate_pipe=True,
+                                            fetch_kv_layer=fetch_kv_layer)
+                            
                             end.record()
                         else:
                             output_dict = model(input_tensor, past_key_values=past_key_values)

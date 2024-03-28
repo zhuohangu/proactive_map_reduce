@@ -16,7 +16,7 @@ import collections
 from itertools import chain
 import inspect
 from rouge_score import rouge_scorer
-from kv_store import add_kv_layer, fetch_kv_layer
+from kv_store import add_kv_layer, fetch_kv_layer, fetch_kv
 
 
 B_INST, E_INST = "[INST]", "[/INST]"
@@ -269,10 +269,11 @@ def evaluate_dataset(
                             end = torch.cuda.Event(enable_timing=True)
                             start.record()
                             
-                            #Fake loading
+                            #Naive loading
+                            chunk_past_key_values = [list(kv) for kv in chunk_past_key_values]
                             for j in range(num_layer):
-                                temp_k = fetch_kv_layer(chunk_past_key_values[j][0], "key", j)
-                                temp_v = fetch_kv_layer(chunk_past_key_values[j][1], "value", j)
+                                chunk_past_key_values[j][0] = fetch_kv_layer("key", j)
+                                chunk_past_key_values[j][1] = fetch_kv_layer("value", j)
                             output_dict = model(input_tensor, 
                                             past_key_values=chunk_past_key_values,
                                             check=True,
@@ -332,7 +333,7 @@ def evaluate_dataset(
             avg_len = total_len/idx
             avg_time = total_time / idx
             
-            
+            '''
             if output_dir is not None:
                 d = {"first_doc_k_ratio":first_doc_k_ratios,
                     #"sample": "30",
@@ -345,6 +346,7 @@ def evaluate_dataset(
 
                 with open("logs/final_70b.json", "a") as f:
                     f.write(json.dumps(d) + "\n")
+            '''
 
 
 def load_dataset(dataset_path):
@@ -357,13 +359,13 @@ def main():
     device = "cuda:1" if torch.cuda.is_available() else "cpu"
     #device = "cpu"
     with torch.no_grad():
-        model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-70b-chat-hf",
+        model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf",
                                             load_in_8bit=True,
                                             device_map='auto',
                                             #torch_dtype=torch.float16,
                                             #bnb_4bit_compute_dtype=torch.float16,
                                             use_cache=True)#.to(device) #Don't use to for load_in_8/4bit since the model has already been set to the correct devices and casted to the correct `dtype`.
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-70b-chat-hf")
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
 
     
     eval_dataset = load_dataset("datasets/samsum.json")
