@@ -1,11 +1,18 @@
 import torch
 
+#FIXME(Jiayi): we should support xxx -> xxx, not just xxx -> gpu
+
 #rootdir = "/home/fsuser/hanchen/transformers_fuse/kv_cache"
 rootdir = "/dataheart/jiayi3/transformers_fuse/kv_cache"
-tiers = ['gpu', 'cpu', 'nfs']
+tiers = ['gpu', 'cpu', 'cpu_pin', 'nfs']
 cpu_hash = {}
+cpu_pin_hash = {}
 gpu_hash = {} #key, [size (GB), content]
 nfs_hash = {}
+
+#HACK(Jiayi): need to be fixed
+# for we do not know the orignal devie when saved
+original_device = {}
 
 import hashlib
 
@@ -54,12 +61,18 @@ def fetch_kv(text_hash, tier):
             return -1
     elif(tier == 'cpu'):
         if (text_hash in cpu_hash):
-            return cpu_hash[text_hash][1].cuda()
+            return cpu_hash[text_hash][1]#.to(original_device[text_hash])
+        else:
+            return -1
+    elif (tier == 'cpu_pin'):
+        if (text_hash in cpu_pin_hash):
+            return cpu_pin_hash[text_hash][1]#.to(original_device[text_hash])
         else:
             return -1
     elif(tier == 'nfs'):
         if (text_hash in nfs_hash):
-            temp = torch.load(nfs_hash[text_hash][1])
+            temp = torch.load(nfs_hash[text_hash][1]).to(original_device[text_hash])
+            # print(original_device[text_hash])
             return temp
         else:
             return -1
@@ -85,7 +98,8 @@ def decide_tier_to_add(kv):
     global disk_available
 
     #determining the logic
-    return "nfs"
+    #return "nfs"
+    return "cpu"
 
 def add_kv(text_hash, kv, tier=None):
     global cpu_available, disk_available
@@ -101,24 +115,27 @@ def add_kv(text_hash, kv, tier=None):
         cpu_hash[text_hash] = [memory_occupied_GB]
         cpu_hash[text_hash].append(kv.to('cpu'))
         cpu_available += memory_occupied_GB
-
+    elif(tier=='cpu_pin'):
+        cpu_pin_hash[text_hash] = [memory_occupied_GB]
+        cpu_pin_hash[text_hash].append(kv.to('cpu').pin_memory())
     elif (tier == 'nfs'):
         nfs_hash[text_hash] = [memory_occupied_GB]
         torch.save(kv, f"{rootdir}/{str(text_hash)}")
         nfs_hash[text_hash].append(f"{rootdir}/{str(text_hash)}")
         disk_available += memory_occupied_GB
+    original_device[text_hash] = kv.device
 
-def add_kv_layer(data, text, layer):
+def add_kv_layer(data, text, layer, tier=None):
     text_hashed = hash_string(text + str(layer))
     # print("adding hash is: ", text_hashed)
-    add_kv(text_hashed, data)
+    add_kv(text_hashed, data, tier=tier)
 
 def fetch_kv_layer(text, layer, mask=None, tier=None):
     text_hashed = hash_string(text + str(layer))
-    print("fetching hash is ", text_hashed)
+    # print("fetching hash is ", text_hashed)
     #time, tier = get_predicted_loading_time(text_hashed)
     if tier is None or tier==-1:
-        tier = 'nfs'
+        tier = 'cpu'
     #import pdb
     #pdb.set_trace()
     #[ADD] decide whether to fetch

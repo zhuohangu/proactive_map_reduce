@@ -22,6 +22,7 @@ import math
 import warnings
 from typing import List, Optional, Tuple, Union
 
+import copy
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
@@ -49,6 +50,7 @@ from ...utils import (
 from .configuration_llama import LlamaConfig
 import pdb
 import numpy as np
+import threading
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -1028,7 +1030,7 @@ class LlamaDecoderLayer(nn.Module):
         self.hidden_size = config.hidden_size
 
         self.self_attn = LLAMA_ATTENTION_CLASSES[config._attn_implementation](config=config, layer_idx=layer_idx)
-
+        #print(self.self_attn)
         self.mlp = LlamaMLP(config)
         self.input_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -1067,6 +1069,10 @@ class LlamaDecoderLayer(nn.Module):
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
 
+        #torch.cuda.synchronize()
+        #start = torch.cuda.Event(enable_timing=True)
+        #end = torch.cuda.Event(enable_timing=True)
+        #start.record()
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -1086,15 +1092,25 @@ class LlamaDecoderLayer(nn.Module):
             last_len=last_len,
             **kwargs,
         )
+        #end.record()
+        #torch.cuda.synchronize()
+        #temp_time = start.elapsed_time(end)
+        #print(f"attn time: {temp_time};")
         # hidden_states: [bsz, head, seq_len, hidden_dim/head]
         # present_key_value: DynamicCache
         #pdb.set_trace()
+        
+        #torch.cuda.synchronize()
+        #start = torch.cuda.Event(enable_timing=True)
+        #end = torch.cuda.Event(enable_timing=True)
+        #start.record()
         if status == 1:
             residual = residual[:,imp_indices_relative]
             #hidden_states = hidden_states[:,imp_indices]
 
         hidden_states = residual + hidden_states
 
+        
         # Fully Connected
         residual = hidden_states
         hidden_states = self.post_attention_layernorm(hidden_states)
@@ -1108,7 +1124,10 @@ class LlamaDecoderLayer(nn.Module):
 
         if use_cache:
             outputs += (present_key_value,)
-
+        #end.record()
+        #torch.cuda.synchronize()
+        #temp_time = start.elapsed_time(end)
+        #print(f"mlp time: {temp_time};")
         return outputs, imp_indices
 
 
@@ -1245,11 +1264,37 @@ LLAMA_INPUTS_DOCSTRING = r"""
             Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
 """
 
+import time
+def thread_task(temp_k, temp_v, cpu_k, cpu_v):
+    
+    #time.sleep(0.013)
+    
+        #FIXME(Jiayi): type conversions are redundant, can we optimize?
+        #FIXME(Jiayi): Proper Sync can get rid of `layer_idx_fetch in [2]`
+        #HACK(Jiayi): this is a hack, please fix it
+        #temp_k = test_metadata["temp_k"]
+        #temp_v = test_metadata["temp_v"]
+        #cpu_k = fetch_kv_layer("key",layer_idx_fetch,load_indices,tier="cpu_pin")
+        #cpu_v = fetch_kv_layer("value",layer_idx_fetch,load_indices,tier="cpu_pin")
+        #cpu_k = test_metadata["cpu_k_org"][:,:,load_indices]
+        #cpu_v = test_metadata["cpu_v_org"][:,:,load_indices]
+        temp_k.copy_(cpu_k, non_blocking=True)
+        temp_v.copy_(cpu_v, non_blocking=True)
+        #temp_k[:,:,load_indices].copy_(cpu_k, non_blocking=True)
+        #temp_v[:,:,load_indices].copy_(cpu_v, non_blocking=True)
 
+def thread_task_unpinned(temp_k, temp_v, cpu_k, cpu_v):
+    load_cache_stream = torch.cuda.Stream()
+    #cpu_k_pin = cpu_k.pin_memory()
+    #cpu_v_pin = cpu_v.pin_memory()
+    #with torch.cuda.stream(load_cache_stream):
+    #    temp_k.copy_(cpu_k_pin, non_blocking=True)
+    #    temp_v.copy_(cpu_v_pin, non_blocking=True)
+  
 @add_start_docstrings(
     "The bare LLaMA Model outputting raw hidden-states without any specific head on top.",
     LLAMA_START_DOCSTRING,
-)
+)   
 class LlamaModel(LlamaPreTrainedModel):
     """
     Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`LlamaDecoderLayer`]
@@ -1275,6 +1320,9 @@ class LlamaModel(LlamaPreTrainedModel):
         self.register_buffer("causal_mask", torch.triu(causal_mask, diagonal=1), persistent=False)
         # Initialize weights and apply final processing
         self.post_init()
+        
+        # Initialize cpu buffer
+         
 
     def get_input_embeddings(self):
         return self.embed_tokens
@@ -1302,7 +1350,7 @@ class LlamaModel(LlamaPreTrainedModel):
         top_k_ratios = None,
         last_len=None,
         activate_pipe=None,
-        fetch_kv_layer=None
+        test_metadata=None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1377,8 +1425,13 @@ class LlamaModel(LlamaPreTrainedModel):
             #pdb.set_trace()
             kv_shape_org = past_key_values[0][0].shape
             kv_dtype = past_key_values[0][0].dtype
+            imp_indices_org = copy.copy(imp_indices)
+        
+            
+        
         for layer_idx, decoder_layer in enumerate(self.layers):
             # loaded_key = fetch(text, x) #cuda, []
+            print(layer_idx)
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -1397,48 +1450,100 @@ class LlamaModel(LlamaPreTrainedModel):
             else:
                 status = 3
             
-            load_cache_stream = torch.cuda.Stream()
+            #pdb.set_trace()
             
-            if activate_pipe and check and layer_idx < 79: #FIXME(Jiayi): make it dynamic to fit diifferent model size
+            if activate_pipe and check and layer_idx < 31: #FIXME(Jiayi): make it dynamic to fit diifferent model size
+                #pdb.set_trace()
+                layer_idx_fetch = layer_idx+1
+                temp_device = past_key_values[layer_idx_fetch][0].device
+                load_cache_stream = torch.cuda.Stream(device=temp_device)
+                #if layer_idx_fetch in check_layers or layer_idx_fetch in [2]:
+                #    load_indices = imp_indices
+                #else:
+                #    load_indices = list(set(imp_indices_org) - set(imp_indices))
+                temp_k = test_metadata["temp_k"]
+                temp_v = test_metadata["temp_v"]
+                cpu_k = test_metadata["cpu_k_org"]#[:,:,load_indices]
+                cpu_v = test_metadata["cpu_v_org"]#[:,:,load_indices]
                 with torch.cuda.stream(load_cache_stream):
-                #FIXME(Jiayi): type conversions are redundant, can we optimize?
-                    temp_past_key_values = [list(kv) for kv in past_key_values]
-                    layer_idx_fetch = layer_idx+1
-                    temp_past_key_values[layer_idx_fetch][0] = torch.empty(kv_shape_org, dtype=kv_dtype)
-                    temp_past_key_values[layer_idx_fetch][1] = torch.empty(kv_shape_org, dtype=kv_dtype)
-                    temp_past_key_values[layer_idx_fetch][0][:,:,imp_indices] = fetch_kv_layer("key",layer_idx_fetch,imp_indices)
-                    temp_past_key_values[layer_idx_fetch][1][:,:,imp_indices] = fetch_kv_layer("value",layer_idx_fetch,imp_indices)
-                    past_key_values = tuple([tuple(x) for x in temp_past_key_values])
-                    past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-            layer_outputs, imp_indices = decoder_layer(
-                hidden_states,
-                attention_mask=causal_mask,
-                position_ids=position_ids, #[bsz, pos_ids]
-                past_key_value=past_key_values,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-                cache_position=cache_position,
-                status=status,
-                imp_indices=imp_indices,
-                top_k_ratio=top_k_ratio,
-                last_len=last_len
-            )
+                    #t_load = threading.Thread(target=thread_task, args=(temp_k, temp_v, cpu_k, cpu_v,
+                    #                                                   ))
+                    #t_load.start()
+                    
+                    
+                    #From unpinned cpu to gpu
+                    cpu_k_pin = cpu_k.pin_memory()
+                    cpu_v_pin = cpu_v.pin_memory()
+                    temp_k.copy_(cpu_k_pin, non_blocking=True)
+                    temp_v.copy_(cpu_v_pin, non_blocking=True)
+                    
+                    # From pinned cpu to gpu
+                    #temp_k.copy_(cpu_k, non_blocking=True)
+                    #temp_v.copy_(cpu_v, non_blocking=True)
+                    
+                    #pass
+                #t_load = threading.Thread(target=thread_task_unpinned, args=(temp_k, temp_v, cpu_k, cpu_v))
+                #t_load.start()
+                    
+                layer_outputs, imp_indices = decoder_layer(
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    position_ids=position_ids, #[bsz, pos_ids]
+                    past_key_value=past_key_values,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    status=status,
+                    imp_indices=imp_indices,
+                    top_k_ratio=top_k_ratio,
+                    last_len=last_len
+                )
 
-            hidden_states = layer_outputs[0]
+                hidden_states = layer_outputs[0]
 
-            if status == 1:
-                cache_position_temp = torch.tensor(imp_indices).to(inputs_embeds.device)
-                position_ids = cache_position_temp.unsqueeze(0)
-                check_layer_idx += 1
+                if status == 1:
+                    cache_position_temp = torch.tensor(imp_indices).to(inputs_embeds.device)
+                    position_ids = cache_position_temp.unsqueeze(0)
+                    check_layer_idx += 1
 
-            if use_cache:
-                next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+                if use_cache:
+                    next_decoder_cache = layer_outputs[2 if output_attentions else 1]
 
-            if output_attentions:
-                all_self_attns += (layer_outputs[1],)
-            
-            if activate_pipe and check and layer_idx < 79:
-                torch.cuda.current_stream().wait_stream(load_cache_stream)
+                if output_attentions:
+                    all_self_attns += (layer_outputs[1],)
+                
+                #Sync
+                #t_load.join()
+                #torch.cuda.synchronize()
+                
+            else:
+                layer_outputs, imp_indices = decoder_layer(
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    position_ids=position_ids, #[bsz, pos_ids]
+                    past_key_value=past_key_values,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    status=status,
+                    imp_indices=imp_indices,
+                    top_k_ratio=top_k_ratio,
+                    last_len=last_len
+                )
+
+                hidden_states = layer_outputs[0]
+
+                if status == 1:
+                    cache_position_temp = torch.tensor(imp_indices).to(inputs_embeds.device)
+                    position_ids = cache_position_temp.unsqueeze(0)
+                    check_layer_idx += 1
+
+                if use_cache:
+                    next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+
+                if output_attentions:
+                    all_self_attns += (layer_outputs[1],)
+                
                 
         hidden_states = self.norm(hidden_states)
 
@@ -1555,7 +1660,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         top_k_ratios = None,
         last_len=None,
         activate_pipe=False,
-        fetch_kv_layer=None,
+        test_metadata=None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1607,7 +1712,7 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             top_k_ratios = top_k_ratios,
             last_len=last_len,
             activate_pipe=activate_pipe,
-            fetch_kv_layer=fetch_kv_layer,
+            test_metadata=test_metadata,
         )
 
         hidden_states = outputs[0]

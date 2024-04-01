@@ -120,7 +120,7 @@ class DynamicCache(Cache):
         self.key_cache[layer_idx] = key_states 
         self.value_cache[layer_idx] = value_states
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
-
+    
     def update(
         self,
         key_states: torch.Tensor,

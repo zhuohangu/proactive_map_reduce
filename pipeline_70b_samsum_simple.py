@@ -6,6 +6,7 @@ import json
 import re
 import string
 import copy
+import time
 
 import torch
 from tqdm import tqdm
@@ -17,7 +18,7 @@ from itertools import chain
 import inspect
 from rouge_score import rouge_scorer
 from kv_store import add_kv_layer, fetch_kv_layer, fetch_kv
-
+from random import sample
 
 B_INST, E_INST = "[INST]", "[/INST]"
 
@@ -125,7 +126,7 @@ def rechunk(ids, chunk_len=100):
 def evaluate_dataset(
         model, tokenizer, eval_dataset, num_docs=0, output_dir=None
 ):
-    num_layer = 80
+    num_layer = 32
     max_gen_len = 128
     
 
@@ -143,8 +144,6 @@ def evaluate_dataset(
             total_time = 0
             for ex in (tq := tqdm(eval_dataset, desc=f"top_k_ratio: 0, EM:  0.0%")):
                 
-                
-                answers = ex["answers"]
 
                 doc_prompts, q_prompt = build_qa_prompt(ex)
                 doc_chunk_ids = [tokenizer.encode(doc)[1:] for doc in doc_prompts]
@@ -244,85 +243,155 @@ def evaluate_dataset(
                         #pdb.set_trace()
                 
                 
-                for j in range(num_layer):
-                    add_kv_layer(chunk_past_key_values[j][0], "key", j, tier="cpu_pin")
-                    add_kv_layer(chunk_past_key_values[j][1], "value", j, tier="cpu_pin")     
-
+                #for j in range(num_layer):
+                #    add_kv_layer(chunk_past_key_values[j][0], "key", j, tier="cpu_pin")
+                #    add_kv_layer(chunk_past_key_values[j][1], "value", j, tier="cpu_pin")     
+                
+                imp_indices = [i for i in range(len(input_ids))]
+                
+                kv_dtype = chunk_past_key_values[j][0].dtype
+                temp_device = chunk_past_key_values[j][0].device
+                kv_shape_org = chunk_past_key_values[j][0].shape
+                cpu_k_org = torch.rand(kv_shape_org, dtype=kv_dtype).pin_memory()
+                cpu_v_org = torch.rand(kv_shape_org, dtype=kv_dtype).pin_memory()
+                temp_k = torch.empty(kv_shape_org, dtype=kv_dtype, device=temp_device)
+                temp_v = torch.empty(kv_shape_org, dtype=kv_dtype, device=temp_device)
+                test_metadata = {"kv_dtype": kv_dtype,
+                                 "temp_device": temp_device,
+                                 "kv_shape_org":kv_shape_org,
+                                 "cpu_k_org":cpu_k_org,
+                                 "cpu_v_org":cpu_v_org,
+                                 "temp_k": temp_k,
+                                 "temp_v":temp_v}
+                #pdb.set_trace()
+                load_indices = imp_indices.copy()
+                time.sleep(2)
+                torch.cuda.synchronize()
+                start = torch.cuda.Event(enable_timing=True)
+                end = torch.cuda.Event(enable_timing=True)
+                start.record()
+                for j in range(num_layer-1):
+                    #cpu_k = cpu_k_org[:,:,load_indices]
+                    #cpu_v = cpu_v_org[:,:,load_indices]
+                    #temp_k[:,:,load_indices].copy_(cpu_k)
+                    #temp_v[:,:,load_indices].copy_(cpu_v)
+                    
+                    cpu_k = cpu_k_org
+                    cpu_v = cpu_v_org
+                    temp_k.copy_(cpu_k)
+                    temp_v.copy_(cpu_v)
+                    
+                    #cpu_k = cpu_k_org.pin_memory()
+                    #cpu_v = cpu_v_org.pin_memory()
+                    #temp_k.copy_(cpu_k)
+                    #temp_v.copy_(cpu_v)
+                    
+                    #pdb.set_trace()
+                    #temp_k.copy_(cpu_k_org)
+                    #temp_v.copy_(cpu_v_org)
+                    #if j > 0:
+                    #    load_indices = sample(imp_indices, int(input_len*(1-first_doc_k_ratios[0])))
+                end.record()
+                torch.cuda.synchronize()
+                temp_time = start.elapsed_time(end)
+                print(f"load time: {temp_time}")
+                
                 # construct imp_indices
                 
                 chunk_past_key_values = [tuple(x) for x in chunk_past_key_values]
                 chunk_past_key_values = tuple(chunk_past_key_values)
                 del past_key_values
                 
-                start_real_decode=False
-                imp_indices = [i for i in range(len(input_ids))]
                 input_tensor = torch.tensor(input_ids, dtype=torch.long).view(1,-1).to(model.device)
                 with torch.no_grad():
-                    res_toks = []
-                    for i in range(max_gen_len):
-                        if input_len+i >= 4096:
-                            break
-                        if i == 0:
-                            #warmup
-                            output_dict = model(torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device))
-                            
-                            torch.cuda.synchronize()
-                            start = torch.cuda.Event(enable_timing=True)
-                            end = torch.cuda.Event(enable_timing=True)
-                            start.record()
-                            #FIXME(Jiayi): Don't use this many params, use a metadat_cls
-                            output_dict = model(input_tensor, 
-                                            past_key_values=chunk_past_key_values,
-                                            check=True,
-                                            imp_indices=imp_indices, 
-                                            top_k_ratios = first_doc_k_ratios,
-                                            check_layers=check_layers,
-                                            last_len = test_last_len,
-                                            #activate_pipe=True,
-                                            fetch_kv_layer=fetch_kv_layer)
-                            
-                            end.record()
-                        else:
-                            output_dict = model(input_tensor, past_key_values=past_key_values)
-                        if i==0:
-                            torch.cuda.synchronize()
-                            temp_time = start.elapsed_time(end)
-                            print(f"check temp time: {temp_time}; input_len: {input_len}")
-                            total_time+=temp_time
-                        tok = torch.argmax(output_dict['logits'][:,-1,:])
-                        past_key_values = output_dict['past_key_values']
-                        if start_real_decode==False and int(tok) not in [13,29871]:
-                            start_real_decode=True
-                        if int(tok) == tokenizer.eos_token_id:
-                            break
-                        if int(tok) == 13 and start_real_decode==True:
-                            break
-                        res_toks.append(int(tok))
-                        input_tensor = tok.view(1,-1)
-                    res_check = tokenizer.decode(res_toks)
-                    res_check = res_check.lstrip('\n').split('\n')[0]
-                    #pdb.set_trace()
-
-                del past_key_values
-                del chunk_past_key_values
+                    #warmup
+                    output_dict = model(torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device))
+                    
+                    torch.cuda.synchronize()
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    #FIXME(Jiayi): Don't use this many params, use a metadat_cls
+                    output_dict = model(input_tensor, 
+                                    past_key_values=chunk_past_key_values,
+                                    check=True,
+                                    imp_indices=imp_indices, 
+                                    top_k_ratios = first_doc_k_ratios,
+                                    check_layers=check_layers,
+                                    last_len = test_last_len,
+                                    activate_pipe=True,
+                                    test_metadata=test_metadata)
+                    
+                    end.record()
+                    torch.cuda.synchronize()
+                    temp_time = start.elapsed_time(end)
+                    print(f"check (pipeline) temp time: {temp_time}; input_len: {input_len}")
+                
+                del output_dict
+                
+                input_tensor = torch.tensor(input_ids, dtype=torch.long).view(1,-1).to(model.device)
+                with torch.no_grad():
+                    #warmup
+                    output_dict = model(torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device))
+                    
+                    torch.cuda.synchronize()
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    #FIXME(Jiayi): Don't use this many params, use a metadat_cls
+                    output_dict = model(input_tensor, 
+                                    past_key_values=chunk_past_key_values,
+                                    check=True,
+                                    imp_indices=imp_indices, 
+                                    top_k_ratios = first_doc_k_ratios,
+                                    check_layers=check_layers,
+                                    last_len = test_last_len)
+                    
+                    end.record()
+                    torch.cuda.synchronize()
+                    temp_time = start.elapsed_time(end)
+                    print(f"check (gpu) temp time: {temp_time}; input_len: {input_len}")
+                
+                input_tensor = torch.tensor(input_ids, dtype=torch.long).view(1,-1).to(model.device)
+                with torch.no_grad():
+                    #warmup
+                    output_dict = model(torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device))
+                    
+                    torch.cuda.synchronize()
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    #FIXME(Jiayi): Don't use this many params, use a metadat_cls
+                    output_dict = model(input_tensor)
+                    
+                    end.record()
+                    torch.cuda.synchronize()
+                    temp_time = start.elapsed_time(end)
+                    print(f"org temp time: {temp_time}; input_len: {input_len}")
+                    
+                    input_tensor=torch.tensor([1], dtype=torch.long).view(1,-1).to(model.device)
+                    torch.cuda.synchronize()
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    output_dict = model(input_tensor,
+                                        past_key_values=output_dict['past_key_values'])
+                    end.record()
+                    torch.cuda.synchronize()
+                    temp_time = start.elapsed_time(end)
+                    print(f"org 1 temp time: {temp_time}; input_len: {input_len}")
+                del output_dict
                 
                 
 
-                is_correct_check = max([compute_r1(res_check, answer) for answer in answers])
                 idx += 1
-                #num_correct_chunk += is_correct_chunk
-                num_correct_check += is_correct_check
-                
 
-                print("res_check:", res_check, is_correct_check)
-                
-                
-                print(answers)
+
                 print(idx)
                 
-                tq.set_description(f"Check: {num_correct_check / idx}; first doc k ratio:{first_doc_k_ratios};")
+                tq.set_description(f"first doc k ratio:{first_doc_k_ratios};")
                 
-                if idx == 5:
+                if idx == 10:
                     pdb.set_trace()
                 
                 #if idx==30:
@@ -357,16 +426,17 @@ def load_dataset(dataset_path):
 
 
 def main():
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    os.environ['CUDA_VISIBLE_DEVICES']='0'
     #device = "cpu"
     with torch.no_grad():
-        model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-70b-chat-hf",
-                                            load_in_8bit=True,
-                                            device_map='auto',
-                                            #torch_dtype=torch.float16,
+        model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf",
+                                            #load_in_8bit=True,
+                                            #device_map='auto',
+                                            torch_dtype=torch.float16,
                                             #bnb_4bit_compute_dtype=torch.float16,
-                                            use_cache=True)#.to(device) #Don't use to for load_in_8/4bit since the model has already been set to the correct devices and casted to the correct `dtype`.
-    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-70b-chat-hf")
+                                            use_cache=True).to(device) #Don't use to for load_in_8/4bit since the model has already been set to the correct devices and casted to the correct `dtype`.
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
 
     
     eval_dataset = load_dataset("datasets/samsum.json")
