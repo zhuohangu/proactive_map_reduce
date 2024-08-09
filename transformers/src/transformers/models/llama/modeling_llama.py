@@ -1431,7 +1431,7 @@ class LlamaModel(LlamaPreTrainedModel):
         
         for layer_idx, decoder_layer in enumerate(self.layers):
             # loaded_key = fetch(text, x) #cuda, []
-            # print(layer_idx)
+            print(layer_idx)
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
